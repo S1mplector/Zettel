@@ -47,27 +47,27 @@ enum SidebarDensity: String, CaseIterable, Identifiable {
     var rowVerticalPadding: CGFloat {
         switch self {
         case .compact:
-            return 7
+            return 6
         case .comfortable:
-            return 10
+            return 9
         }
     }
 
     var rowCornerRadius: CGFloat {
         switch self {
         case .compact:
-            return 12
+            return 10
         case .comfortable:
-            return 14
+            return 12
         }
     }
 
     var selectionBarHeight: CGFloat {
         switch self {
         case .compact:
-            return 26
+            return 22
         case .comfortable:
-            return 34
+            return 28
         }
     }
 
@@ -83,9 +83,9 @@ enum SidebarDensity: String, CaseIterable, Identifiable {
     var iconFrame: CGFloat {
         switch self {
         case .compact:
-            return 26
+            return 24
         case .comfortable:
-            return 30
+            return 28
         }
     }
 
@@ -101,18 +101,18 @@ enum SidebarDensity: String, CaseIterable, Identifiable {
     var iconCornerRadius: CGFloat {
         switch self {
         case .compact:
-            return 8
+            return 7
         case .comfortable:
-            return 10
+            return 8
         }
     }
 
     var titleFont: Font {
         switch self {
         case .compact:
-            return .system(size: 12, weight: .medium, design: .rounded)
+            return .body
         case .comfortable:
-            return .system(size: 13, weight: .semibold, design: .rounded)
+            return .body.weight(.medium)
         }
     }
 
@@ -130,7 +130,7 @@ enum SidebarDensity: String, CaseIterable, Identifiable {
         case .compact:
             return 0
         case .comfortable:
-            return 3
+            return 2
         }
     }
 

@@ -3,6 +3,7 @@ import SwiftUI
 import ZettelKit
 
 struct RichTextEditor: NSViewRepresentable {
+    let nodeID: UUID
     let data: Data?
     let onChange: (Data?) -> Void
 
@@ -41,7 +42,7 @@ struct RichTextEditor: NSViewRepresentable {
         scrollView.documentView = textView
 
         context.coordinator.textView = textView
-        context.coordinator.apply(data: data, to: textView)
+        context.coordinator.apply(nodeID: nodeID, data: data, to: textView)
 
         return scrollView
     }
@@ -51,12 +52,13 @@ struct RichTextEditor: NSViewRepresentable {
             return
         }
 
-        context.coordinator.apply(data: data, to: textView)
+        context.coordinator.apply(nodeID: nodeID, data: data, to: textView)
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         let onChange: (Data?) -> Void
         weak var textView: NSTextView?
+        private var lastNodeID: UUID?
         private var lastData: Data?
         private var isApplyingExternalUpdate = false
 
@@ -72,8 +74,8 @@ struct RichTextEditor: NSViewRepresentable {
             publish()
         }
 
-        func apply(data: Data?, to textView: NSTextView) {
-            guard data != lastData else {
+        func apply(nodeID: UUID, data: Data?, to textView: NSTextView) {
+            guard nodeID != lastNodeID || data != lastData else {
                 return
             }
 
@@ -84,6 +86,7 @@ struct RichTextEditor: NSViewRepresentable {
                 .foregroundColor: NSColor.labelColor,
             ]
             isApplyingExternalUpdate = false
+            lastNodeID = nodeID
             lastData = data
         }
 

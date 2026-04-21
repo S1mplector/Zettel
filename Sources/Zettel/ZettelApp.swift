@@ -14,7 +14,7 @@ struct ZettelApp: App {
         }
         .defaultSize(width: 1100, height: 720)
 
-        MenuBarExtra("Zettel", systemImage: "tree") {
+        MenuBarExtra("Zettel", systemImage: AppVisualIdentity.symbolName) {
             MenuBarExtraContent(store: store)
         }
 

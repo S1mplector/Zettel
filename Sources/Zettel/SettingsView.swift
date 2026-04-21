@@ -16,8 +16,8 @@ struct SettingsView: View {
                     }
                 }
 
-                Toggle("Show child counts in the tree", isOn: $showSidebarChildCounts)
-                Toggle("Show vertical guide rails", isOn: $showTreeGuides)
+                Toggle("Show child counts", isOn: $showSidebarChildCounts)
+                Toggle("Show tree guides", isOn: $showTreeGuides)
             }
 
             Section("Editor") {
@@ -27,13 +27,21 @@ struct SettingsView: View {
             Section("Behavior") {
                 Toggle("Auto-expand ancestors when selecting nodes", isOn: $autoExpandSelectionPath)
 
-                Text("Changes apply immediately to the current window.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Button("Restore Defaults") {
+                    restoreDefaults()
+                }
             }
         }
         .formStyle(.grouped)
         .padding(20)
-        .frame(width: 480)
+        .frame(width: 420)
+    }
+
+    private func restoreDefaults() {
+        sidebarDensityRawValue = SidebarDensity.comfortable.rawValue
+        showSidebarChildCounts = true
+        showTreeGuides = true
+        showNodeMetadata = true
+        autoExpandSelectionPath = true
     }
 }

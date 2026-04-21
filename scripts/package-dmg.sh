@@ -13,6 +13,7 @@ APP_DIR="$DIST_DIR/$APP_NAME.app"
 DMG_STAGING_DIR="$DIST_DIR/dmg-root"
 DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
 DESKTOP_DMG_PATH="$HOME/Desktop/$APP_NAME.dmg"
+ICON_PATH="$DIST_DIR/$APP_NAME.icns"
 
 cd "$ROOT_DIR"
 
@@ -26,11 +27,14 @@ if [[ ! -x "$EXECUTABLE_PATH" ]]; then
   exit 1
 fi
 
-rm -rf "$APP_DIR" "$DMG_STAGING_DIR" "$DMG_PATH"
+rm -rf "$APP_DIR" "$DMG_STAGING_DIR" "$DMG_PATH" "$ICON_PATH"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources" "$DMG_STAGING_DIR"
 
 cp "$EXECUTABLE_PATH" "$APP_DIR/Contents/MacOS/$APP_NAME"
 chmod +x "$APP_DIR/Contents/MacOS/$APP_NAME"
+
+swift "$ROOT_DIR/scripts/generate-app-icon.swift" "$ICON_PATH"
+cp "$ICON_PATH" "$APP_DIR/Contents/Resources/$APP_NAME.icns"
 
 cat > "$APP_DIR/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -45,6 +49,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
   <string>$BUNDLE_IDENTIFIER</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
+  <key>CFBundleIconFile</key>
+  <string>$APP_NAME.icns</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>

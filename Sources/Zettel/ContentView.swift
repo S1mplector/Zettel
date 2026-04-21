@@ -12,6 +12,7 @@ struct ContentView: View {
 
     @State private var selection: UUID?
     @State private var expandedNodeIDs: Set<UUID> = []
+    @State private var searchText = ""
 
     private var selectedNode: ZettelNode? {
         store.node(with: selection)
@@ -19,6 +20,22 @@ struct ContentView: View {
 
     private var sidebarDensity: SidebarDensity {
         SidebarDensity(rawValue: sidebarDensityRawValue) ?? .comfortable
+    }
+
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isFiltering: Bool {
+        !normalizedSearchText.isEmpty
+    }
+
+    private var displayedNodes: [ZettelNode] {
+        guard isFiltering else {
+            return store.rootNodes
+        }
+
+        return filter(nodes: store.rootNodes, matching: normalizedSearchText)
     }
 
     private var canCreateSibling: Bool {
@@ -44,16 +61,21 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             TreeSidebarView(
-                nodes: store.rootNodes,
+                nodes: displayedNodes,
+                searchText: $searchText,
                 selection: $selection,
                 expandedNodeIDs: $expandedNodeIDs,
                 density: sidebarDensity,
                 showChildCounts: showSidebarChildCounts,
                 showGuides: showTreeGuides,
-                totalNodeCount: store.allNodeIDs().count,
+                totalNodeCount: countNodes(in: store.rootNodes),
+                visibleNodeCount: countNodes(in: displayedNodes),
+                isFiltering: isFiltering,
                 selectedPath: store.titlePath(for: selection),
                 onCreateRoot: addRootNode,
                 onOpenSettings: AppWindowController.openSettings,
+                onExpandAll: expandAllDisplayedNodes,
+                onCollapseAll: collapseTree,
                 onAddChild: addChildNode,
                 onAddSibling: addSiblingNode,
                 onMoveUp: moveNodeUp,
@@ -66,7 +88,7 @@ struct ContentView: View {
                 canIndent: store.canIndentNode,
                 canOutdent: store.canOutdentNode
             )
-            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)
+            .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 380)
         } detail: {
             if let selectedNode {
                 NodeDetailView(
@@ -74,8 +96,12 @@ struct ContentView: View {
                     titlePath: store.titlePath(for: selectedNode.id),
                     showMetadata: showNodeMetadata,
                     onTitleChange: { store.updateTitle(for: selectedNode.id, title: $0) },
-                    onContentChange: { store.updateContent(for: selectedNode.id, content: $0) }
+                    onContentChange: { store.updateContent(for: selectedNode.id, content: $0) },
+                    onCreateChild: { addChildNode(selectedNode.id) },
+                    onCreateSibling: { addSiblingNode(selectedNode.id) },
+                    onDelete: { delete(selectedNode.id) }
                 )
+                .id(selectedNode.id)
             } else {
                 ContentUnavailableView(
                     "Select a Node",
@@ -89,7 +115,7 @@ struct ContentView: View {
                 Button(action: addRootNode) {
                     Label("New Root Node", systemImage: "plus")
                 }
-                .keyboardShortcut("n")
+                .keyboardShortcut("n", modifiers: [.command])
 
                 Button {
                     addChildNode(selection)
@@ -153,6 +179,17 @@ struct ContentView: View {
         }
         .onChange(of: selection) { _, _ in
             revealSelectionIfNeeded()
+        }
+        .onChange(of: searchText) { _, _ in
+            guard isFiltering else {
+                return
+            }
+
+            if let selection, contains(nodeID: selection, in: displayedNodes) {
+                return
+            }
+
+            selection = firstNodeID(in: displayedNodes)
         }
         .onChange(of: store.allNodeIDs()) { _, nodeIDs in
             expandedNodeIDs.formIntersection(Set(nodeIDs))
@@ -241,6 +278,39 @@ struct ContentView: View {
         expandedNodeIDs.formUnion(path.dropLast())
     }
 
+    private func expandAllDisplayedNodes() {
+        withAnimation(.snappy(duration: 0.18)) {
+            expandedNodeIDs.formUnion(allExpandableNodeIDs(in: displayedNodes))
+        }
+    }
+
+    private func collapseTree() {
+        withAnimation(.snappy(duration: 0.18)) {
+            expandedNodeIDs = []
+        }
+    }
+
+    private func filter(nodes: [ZettelNode], matching query: String) -> [ZettelNode] {
+        nodes.compactMap { node in
+            let filteredChildren = filter(nodes: node.children, matching: query)
+            let matches = node.displayTitle.localizedCaseInsensitiveContains(query)
+
+            guard matches || !filteredChildren.isEmpty else {
+                return nil
+            }
+
+            var copy = node
+            copy.children = filteredChildren
+            return copy
+        }
+    }
+
+    private func countNodes(in nodes: [ZettelNode]) -> Int {
+        nodes.reduce(0) { partialResult, node in
+            partialResult + 1 + countNodes(in: node.children)
+        }
+    }
+
     private func pathToNode(_ id: UUID, in nodes: [ZettelNode]) -> [UUID]? {
         for node in nodes {
             if node.id == id {
@@ -254,19 +324,44 @@ struct ContentView: View {
 
         return nil
     }
+
+    private func allExpandableNodeIDs(in nodes: [ZettelNode]) -> Set<UUID> {
+        nodes.reduce(into: Set<UUID>()) { partialResult, node in
+            if !node.children.isEmpty {
+                partialResult.insert(node.id)
+            }
+
+            partialResult.formUnion(allExpandableNodeIDs(in: node.children))
+        }
+    }
+
+    private func contains(nodeID: UUID, in nodes: [ZettelNode]) -> Bool {
+        nodes.contains { node in
+            node.id == nodeID || contains(nodeID: nodeID, in: node.children)
+        }
+    }
+
+    private func firstNodeID(in nodes: [ZettelNode]) -> UUID? {
+        nodes.first?.id
+    }
 }
 
 private struct TreeSidebarView: View {
     let nodes: [ZettelNode]
+    @Binding var searchText: String
     @Binding var selection: UUID?
     @Binding var expandedNodeIDs: Set<UUID>
     let density: SidebarDensity
     let showChildCounts: Bool
     let showGuides: Bool
     let totalNodeCount: Int
+    let visibleNodeCount: Int
+    let isFiltering: Bool
     let selectedPath: [String]
     let onCreateRoot: () -> Void
     let onOpenSettings: () -> Void
+    let onExpandAll: () -> Void
+    let onCollapseAll: () -> Void
     let onAddChild: (UUID?) -> Void
     let onAddSibling: (UUID?) -> Void
     let onMoveUp: (UUID?) -> Void
@@ -281,22 +376,34 @@ private struct TreeSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TreeSidebarHeader(
+            SidebarHeader(
+                searchText: $searchText,
                 totalNodeCount: totalNodeCount,
-                rootNodeCount: nodes.count,
+                visibleNodeCount: visibleNodeCount,
+                isFiltering: isFiltering,
                 selectedPath: selectedPath,
                 onCreateRoot: onCreateRoot,
-                onOpenSettings: onOpenSettings
+                onOpenSettings: onOpenSettings,
+                onExpandAll: onExpandAll,
+                onCollapseAll: onCollapseAll
             )
 
             Divider()
 
-            if nodes.isEmpty {
+            if totalNodeCount == 0 {
                 ContentUnavailableView(
                     "No Nodes Yet",
                     systemImage: "tree",
                     description: Text("Create a root node, then shape years, topics, or any other branch beneath it.")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if nodes.isEmpty {
+                ContentUnavailableView(
+                    "No Matches",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try a broader term or clear the filter to return to the full outline.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: density.branchSpacing) {
@@ -309,6 +416,7 @@ private struct TreeSidebarView: View {
                                 density: density,
                                 showChildCounts: showChildCounts,
                                 showGuides: showGuides,
+                                forceExpanded: isFiltering,
                                 onAddChild: onAddChild,
                                 onAddSibling: onAddSibling,
                                 onMoveUp: onMoveUp,
@@ -323,7 +431,7 @@ private struct TreeSidebarView: View {
                             )
                         }
                     }
-                    .padding(12)
+                    .padding(10)
                 }
                 .background(Color(nsColor: .controlBackgroundColor))
             }
@@ -332,87 +440,60 @@ private struct TreeSidebarView: View {
     }
 }
 
-private struct TreeSidebarHeader: View {
+private struct SidebarHeader: View {
+    @Binding var searchText: String
     let totalNodeCount: Int
-    let rootNodeCount: Int
+    let visibleNodeCount: Int
+    let isFiltering: Bool
     let selectedPath: [String]
     let onCreateRoot: () -> Void
     let onOpenSettings: () -> Void
+    let onExpandAll: () -> Void
+    let onCollapseAll: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Tree")
-                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Nodes")
+                        .font(.title3.weight(.semibold))
 
-                    Text("\(totalNodeCount) nodes across \(rootNodeCount) root\(rootNodeCount == 1 ? "" : "s")")
+                    Text(isFiltering ? "\(visibleNodeCount) matching" : "\(totalNodeCount) total")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                HStack(spacing: 8) {
-                    SidebarActionButton(
-                        systemImage: "slider.horizontal.3",
-                        accessibilityLabel: "Open Settings",
-                        action: onOpenSettings
-                    )
-
-                    SidebarActionButton(
-                        systemImage: "plus",
-                        accessibilityLabel: "New Root Node",
-                        action: onCreateRoot
-                    )
+                Button(action: onOpenSettings) {
+                    Image(systemName: "gearshape")
                 }
+                .buttonStyle(.borderless)
+
+                Button(action: onCreateRoot) {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
             }
 
-            if selectedPath.isEmpty {
-                Text("Sketch years, topics, and branches with a tree that behaves like an outline instead of a generic list.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
+            TextField("Filter nodes", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Button("Expand All", action: onExpandAll)
+                Button("Collapse All", action: onCollapseAll)
+            }
+            .buttonStyle(.link)
+            .font(.caption)
+
+            if !selectedPath.isEmpty {
                 Text(selectedPath.joined(separator: " / "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .textSelection(.enabled)
+                    .lineLimit(2)
             }
         }
-        .padding(16)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.accentColor.opacity(0.14),
-                    Color.accentColor.opacity(0.05),
-                    Color(nsColor: .controlBackgroundColor),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-    }
-}
-
-private struct SidebarActionButton: View {
-    let systemImage: String
-    let accessibilityLabel: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 30, height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.primary.opacity(0.07))
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
+        .padding(12)
     }
 }
 
@@ -424,6 +505,7 @@ private struct SidebarNodeBranch: View {
     let density: SidebarDensity
     let showChildCounts: Bool
     let showGuides: Bool
+    let forceExpanded: Bool
     let onAddChild: (UUID?) -> Void
     let onAddSibling: (UUID?) -> Void
     let onMoveUp: (UUID?) -> Void
@@ -441,7 +523,7 @@ private struct SidebarNodeBranch: View {
     }
 
     private var isExpanded: Bool {
-        expandedNodeIDs.contains(node.id)
+        forceExpanded || expandedNodeIDs.contains(node.id)
     }
 
     private var hasChildren: Bool {
@@ -459,15 +541,9 @@ private struct SidebarNodeBranch: View {
                     selection = node.id
                 } label: {
                     HStack(spacing: density.rowSpacing) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: density.iconCornerRadius, style: .continuous)
-                                .fill(iconBackground)
-
-                            Image(systemName: iconName)
-                                .font(.system(size: density.iconSize, weight: .semibold))
-                                .foregroundStyle(iconForeground)
-                        }
-                        .frame(width: density.iconFrame, height: density.iconFrame)
+                        Image(systemName: hasChildren ? "folder" : "doc.text")
+                            .frame(width: density.iconFrame, height: density.iconFrame)
+                            .foregroundStyle(hasChildren ? Color.accentColor : .secondary)
 
                         VStack(alignment: .leading, spacing: density.metaSpacing) {
                             Text(node.displayTitle)
@@ -495,34 +571,16 @@ private struct SidebarNodeBranch: View {
 
                         Spacer(minLength: 8)
 
-                        if node.content != nil {
-                            Circle()
-                                .fill(Color.accentColor.opacity(isSelected ? 0.95 : 0.75))
-                                .frame(width: 7, height: 7)
-                        }
-
                         if showChildCounts, hasChildren {
                             Text("\(node.children.count)")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 4)
-                                .background(
-                                    Capsule(style: .continuous)
-                                        .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
-                                )
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, density.rowVerticalPadding)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(rowBackground)
-                    .overlay(alignment: .leading) {
-                        Capsule(style: .continuous)
-                            .fill(isSelected ? Color.accentColor : Color.secondary.opacity(0.16))
-                            .frame(width: 3, height: density.selectionBarHeight)
-                            .padding(.leading, 8)
-                    }
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
@@ -580,6 +638,7 @@ private struct SidebarNodeBranch: View {
                         density: density,
                         showChildCounts: showChildCounts,
                         showGuides: showGuides,
+                        forceExpanded: forceExpanded,
                         onAddChild: onAddChild,
                         onAddSibling: onAddSibling,
                         onMoveUp: onMoveUp,
@@ -602,54 +661,29 @@ private struct SidebarNodeBranch: View {
         Group {
             if hasChildren {
                 Button {
-                    if isExpanded {
+                    if isExpanded, !forceExpanded {
                         expandedNodeIDs.remove(node.id)
-                    } else {
+                    } else if !forceExpanded {
                         expandedNodeIDs.insert(node.id)
                     }
                 } label: {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: density.disclosureWidth, height: density.disclosureWidth)
                 }
                 .buttonStyle(.plain)
+                .disabled(forceExpanded)
             } else {
-                Circle()
-                    .fill(Color.secondary.opacity(0.28))
-                    .frame(width: 6, height: 6)
+                Color.clear
                     .frame(width: density.disclosureWidth, height: density.disclosureWidth)
             }
         }
     }
 
-    private var iconName: String {
-        if hasChildren {
-            return isExpanded ? "square.stack.3d.down.forward.fill" : "square.stack.3d.up.fill"
-        }
-
-        return node.content == nil ? "square.text.square" : "doc.richtext.fill"
-    }
-
-    private var iconBackground: Color {
-        if isSelected {
-            return Color.accentColor.opacity(0.18)
-        }
-
-        return hasChildren ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.1)
-    }
-
-    private var iconForeground: Color {
-        if isSelected {
-            return .accentColor
-        }
-
-        return hasChildren ? .accentColor : .secondary
-    }
-
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: density.rowCornerRadius, style: .continuous)
-            .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035))
+            .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
     }
 }
 
@@ -661,8 +695,8 @@ private struct TreeIndentGuides: View {
     var body: some View {
         HStack(spacing: density.guideSpacing) {
             ForEach(0..<depth, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 1, style: .continuous)
-                    .fill(showGuides ? Color.secondary.opacity(0.16) : .clear)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(showGuides ? Color.secondary.opacity(0.18) : .clear)
                     .frame(width: 2, height: density.guideHeight)
             }
         }
@@ -676,6 +710,9 @@ private struct NodeDetailView: View {
     let showMetadata: Bool
     let onTitleChange: (String) -> Void
     let onContentChange: (Data?) -> Void
+    let onCreateChild: () -> Void
+    let onCreateSibling: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -697,30 +734,34 @@ private struct NodeDetailView: View {
             .font(.title2.weight(.semibold))
 
             HStack {
-                Label("Paste formatted text or images directly into the editor.", systemImage: "photo.on.rectangle")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
                 if showMetadata {
-                    VStack(alignment: .trailing, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Created \(node.createdAt.formatted(date: .abbreviated, time: .shortened))")
                         Text("Updated \(node.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
+
+                Spacer()
+
+                HStack {
+                    Button("Child", action: onCreateChild)
+                    Button("Sibling", action: onCreateSibling)
+                    Button("Delete", role: .destructive, action: onDelete)
+                }
+                .buttonStyle(.bordered)
             }
 
-            RichTextEditor(data: node.content, onChange: onContentChange)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+            RichTextEditor(nodeID: node.id, data: node.content, onChange: onContentChange)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 14)
+                    RoundedRectangle(cornerRadius: 12)
                         .strokeBorder(.quaternary, lineWidth: 1)
                 }
         }
         .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 }
