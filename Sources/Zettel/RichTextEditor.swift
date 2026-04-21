@@ -5,6 +5,7 @@ import ZettelKit
 struct RichTextEditor: NSViewRepresentable {
     let nodeID: UUID
     let data: Data?
+    let focusOnPresent: Bool
     let onChange: (Data?) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -42,7 +43,12 @@ struct RichTextEditor: NSViewRepresentable {
         scrollView.documentView = textView
 
         context.coordinator.textView = textView
-        context.coordinator.apply(nodeID: nodeID, data: data, to: textView)
+        context.coordinator.apply(
+            nodeID: nodeID,
+            data: data,
+            focusOnPresent: focusOnPresent,
+            to: textView
+        )
 
         return scrollView
     }
@@ -52,7 +58,12 @@ struct RichTextEditor: NSViewRepresentable {
             return
         }
 
-        context.coordinator.apply(nodeID: nodeID, data: data, to: textView)
+        context.coordinator.apply(
+            nodeID: nodeID,
+            data: data,
+            focusOnPresent: focusOnPresent,
+            to: textView
+        )
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -74,7 +85,12 @@ struct RichTextEditor: NSViewRepresentable {
             publish()
         }
 
-        func apply(nodeID: UUID, data: Data?, to textView: NSTextView) {
+        func apply(
+            nodeID: UUID,
+            data: Data?,
+            focusOnPresent: Bool,
+            to textView: NSTextView
+        ) {
             guard nodeID != lastNodeID || data != lastData else {
                 return
             }
@@ -88,6 +104,19 @@ struct RichTextEditor: NSViewRepresentable {
             isApplyingExternalUpdate = false
             lastNodeID = nodeID
             lastData = data
+
+            guard focusOnPresent else {
+                return
+            }
+
+            DispatchQueue.main.async {
+                guard textView.window != nil else {
+                    return
+                }
+
+                textView.setSelectedRange(NSRange(location: textView.string.count, length: 0))
+                textView.window?.makeFirstResponder(textView)
+            }
         }
 
         private func publish() {

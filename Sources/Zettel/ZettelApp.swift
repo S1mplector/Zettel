@@ -13,6 +13,9 @@ struct ZettelApp: App {
                 .frame(minWidth: 960, minHeight: 640)
         }
         .defaultSize(width: 1100, height: 720)
+        .commands {
+            RichTextFormattingCommands()
+        }
 
         MenuBarExtra("Zettel", systemImage: AppVisualIdentity.symbolName) {
             MenuBarExtraContent(store: store)
@@ -21,6 +24,31 @@ struct ZettelApp: App {
         Settings {
             SettingsView()
         }
+    }
+}
+
+private struct RichTextFormattingCommands: Commands {
+    var body: some Commands {
+        CommandMenu("Format") {
+            Button("Bold") {
+                sendTextAction("toggleBoldface:")
+            }
+            .keyboardShortcut("b", modifiers: [.command])
+
+            Button("Italic") {
+                sendTextAction("toggleItalics:")
+            }
+            .keyboardShortcut("i", modifiers: [.command])
+
+            Button("Underline") {
+                sendTextAction("toggleUnderline:")
+            }
+            .keyboardShortcut("u", modifiers: [.command])
+        }
+    }
+
+    private func sendTextAction(_ selectorName: String) {
+        NSApp.sendAction(Selector(selectorName), to: nil, from: nil)
     }
 }
 

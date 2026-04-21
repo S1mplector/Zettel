@@ -714,6 +714,12 @@ private struct NodeDetailView: View {
     let onCreateSibling: () -> Void
     let onDelete: () -> Void
 
+    @FocusState private var isTitleFieldFocused: Bool
+
+    private var shouldFocusTitleOnPresent: Bool {
+        node.title == "Untitled Node"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if !titlePath.isEmpty {
@@ -732,6 +738,7 @@ private struct NodeDetailView: View {
             )
             .textFieldStyle(.roundedBorder)
             .font(.title2.weight(.semibold))
+            .focused($isTitleFieldFocused)
 
             HStack {
                 if showMetadata {
@@ -753,7 +760,12 @@ private struct NodeDetailView: View {
                 .buttonStyle(.bordered)
             }
 
-            RichTextEditor(nodeID: node.id, data: node.content, onChange: onContentChange)
+            RichTextEditor(
+                nodeID: node.id,
+                data: node.content,
+                focusOnPresent: !shouldFocusTitleOnPresent,
+                onChange: onContentChange
+            )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12)
@@ -763,5 +775,14 @@ private struct NodeDetailView: View {
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear {
+            guard shouldFocusTitleOnPresent else {
+                return
+            }
+
+            DispatchQueue.main.async {
+                isTitleFieldFocused = true
+            }
+        }
     }
 }
